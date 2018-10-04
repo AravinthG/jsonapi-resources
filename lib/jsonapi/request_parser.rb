@@ -153,7 +153,7 @@ module JSONAPI
       # Extract the fields for each type from the fields parameters
       if fields.is_a?(ActionController::Parameters)
         fields.each do |field, value|
-          resource_fields = value.split(',') unless value.nil? || value.empty?
+          resource_fields = value.is_a?(Array) ? value : value.split(',') if value.present?
           extracted_fields[field] = resource_fields
         end
       else
@@ -239,6 +239,8 @@ module JSONAPI
     def parse_filters(filters)
       return unless filters
 
+      @filters = []
+
       unless JSONAPI.configuration.allow_filter
         fail JSONAPI::Exceptions::ParameterNotAllowed.new(:filter)
       end
@@ -251,7 +253,8 @@ module JSONAPI
       filters.each do |key, value|
         filter = unformat_key(key)
         if @resource_klass._allowed_filter?(filter)
-          @filters[filter] = value
+          # Hack : common structure to support additional filter operators
+          @filters << {field: filter, value: value, operator: :std}
         else
           fail JSONAPI::Exceptions::FilterNotAllowed.new(filter)
         end

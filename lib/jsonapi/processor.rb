@@ -23,7 +23,12 @@ module JSONAPI
       end
 
       def _processor_from_resource_type(resource_klass)
-        processor = resource_klass.name.gsub(/Resource$/,'Processor').safe_constantize
+        if resource_klass._processor.present?
+          processor = resource_klass._processor.safe_constantize
+        else
+          processor = resource_klass.name.gsub(/Resource$/,'Processor').safe_constantize
+        end
+
         if processor.nil?
           processor = JSONAPI.configuration.default_processor_klass
         end
@@ -61,6 +66,14 @@ module JSONAPI
 
     rescue JSONAPI::Exceptions::Error => e
       @result = JSONAPI::ErrorsOperationResult.new(e.errors[0].code, e.errors)
+    end
+
+    def method_missing(m, *args, &block)
+      if m.to_s.match(/^_run_.*_callbacks$/)
+        yield
+      else
+        super
+      end
     end
 
     def find

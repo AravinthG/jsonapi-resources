@@ -4,6 +4,7 @@ require 'jsonapi/relationship_builder'
 module JSONAPI
   class Resource
     include Callbacks
+    extend ::JSONAPI::FilterHelper
 
     attr_reader :context
 
@@ -693,7 +694,7 @@ module JSONAPI
         joins.join("\n")
       end
 
-      def apply_filter(records, filter, value, options = {})
+      def apply_filter(records, filter, value, operator = :std, options = {})
         strategy = _allowed_filters.fetch(filter.to_sym, Hash.new)[:apply]
 
         if strategy
@@ -703,24 +704,39 @@ module JSONAPI
             strategy.call(records, value, options)
           end
         else
-          records.where(filter => value)
+          operator ||= :std
+          case operator.to_sym
+          when :std, nil
+            records.where(filter => value)
+          when :not
+            # currently supports not only for eq and range
+            records.where.not(filter => value)
+          else
+            cond = filter_query_string(filter, value, operator.to_sym)
+            records.where(cond)
+          end
         end
       end
 
-      def apply_filters(records, filters, options = {})
+      def apply_filters(records, filter_params, options = {})
         required_includes = []
 
-        if filters
-          filters.each do |filter, value|
-            if _relationships.include?(filter)
-              if _relationships[filter].belongs_to?
-                records = apply_filter(records, _relationships[filter].foreign_key, value, options)
+        # To convert any non-std filter(from any internal process) into std form
+        filter_params = convert_to_std_filter_format filter_params if filter_params.present? && filter_params.is_a?(Hash)
+
+        if filter_params.present?
+          filter_params.each do |filter|
+            if _relationships.include?(filter[:field])
+              if _relationships[filter[:field]].belongs_to?
+                records = apply_filter(records, _relationships[filter[:field]].foreign_key,
+                                       filter[:value], filter[:operator],  options)
               else
-                required_includes.push(filter.to_s)
-                records = apply_filter(records, "#{_relationships[filter].table_name}.#{_relationships[filter].primary_key}", value, options)
+                required_includes.push(filter[:field].to_s)
+                records = apply_filter(records, "#{_relationships[filter[:field]].table_name}.#{_relationships[filter[:field]].primary_key}",
+                                       filter[:value], filter[:operator], options)
               end
             else
-              records = apply_filter(records, filter, value, options)
+              records = apply_filter(records, filter[:field], filter[:value], filter[:operator], options)
             end
           end
         end
@@ -730,6 +746,15 @@ module JSONAPI
         end
 
         records
+      end
+
+      # To convert any non-std filter(from any internal process) into std form
+      def convert_to_std_filter_format filters
+        filter_arr = []
+        filters.each do |field, value|
+          filter_arr << {field: field, value: value, operator: :std}
+        end
+        filter_arr
       end
 
       def filter_records(filters, options, records = records(options))
@@ -755,8 +780,12 @@ module JSONAPI
       end
 
       def resources_for(records, context)
+        # Hack to get rows from ActiveRecord relation
+        records.to_a
+        # To avoid doing finding resource class for each record(all records are of same type)
+        resource_class = self.resource_for_model(records.first) if records.present?
         records.collect do |model|
-          resource_class = self.resource_for_model(model)
+          # resource_class = self.resource_for_model(model)
           resource_class.new(model, context)
         end
       end
@@ -809,13 +838,12 @@ module JSONAPI
       end
 
       def verify_filters(filters, context = nil)
-        verified_filters = {}
+        verified_filters = []
+        return verified_filters if filters.blank?
 
-        return verified_filters if filters.nil?
-
-        filters.each do |filter, raw_value|
-          verified_filter = verify_filter(filter, raw_value, context)
-          verified_filters[verified_filter[0]] = verified_filter[1]
+        filters.each do |f_h|
+          v_f = verify_filter(f_h[:field], f_h[:value], context)
+          verified_filters << {field: v_f[0], value: v_f[1].flatten, operator: f_h[:operator]}
         end
         verified_filters
       end
@@ -994,6 +1022,38 @@ module JSONAPI
 
       def caching?
         @caching && !JSONAPI.configuration.resource_cache.nil?
+      end
+
+      def processor klass
+        @_processor = klass
+      end
+
+      def _processor
+        @_processor
+      end
+
+      def serializer klass
+        @_serializer = klass
+      end
+
+      def _serializer
+        @_serializer
+      end
+
+      def request_parser klass
+        @_request_parser = klass
+      end
+
+      def _request_parser
+        @_request_parser
+      end
+
+      def formatter klass
+        @_formatter = klass
+      end
+
+      def _formatter
+        @_formatter
       end
 
       def attribute_caching_context(context)
