@@ -1,5 +1,6 @@
 require 'jsonapi/naive_cache'
 require 'jsonapi/compiled_json'
+require 'jsonapi/filter_helper'
 require 'jsonapi/resource'
 require 'jsonapi/cached_resource_fragment'
 require 'jsonapi/response_document'

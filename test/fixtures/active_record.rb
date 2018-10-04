@@ -622,8 +622,8 @@ class Thing < ActiveRecord::Base
 end
 
 class RelatedThing < ActiveRecord::Base
-  belongs_to :from, class_name: Thing, foreign_key: :from_id
-  belongs_to :to, class_name: Thing, foreign_key: :to_id
+  belongs_to :from, class_name: "Thing", foreign_key: :from_id
+  belongs_to :to, class_name: "Thing", foreign_key: :to_id
 end
 
 class Question < ActiveRecord::Base
@@ -1591,6 +1591,7 @@ module Api
 
       def self.find_records(filters, options = {})
         rel = _model_class
+        filters = filters.map { |f_h| [f_h[:field], f_h[:value]]}.to_h if filters.is_a?(Array)
         filters.each do |attr, filter|
           if attr.to_s == "id"
             rel = rel.where(id: filter)

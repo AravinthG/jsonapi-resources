@@ -61,9 +61,11 @@ module JSONAPI
     end
 
     def process_request
+      assign_http_request_object_hack
       return unless verify_accept_header
 
-      @request = JSONAPI::RequestParser.new(params, context: context,
+      request_parser = resource_klass._request_parser ? resource_klass._request_parser.safe_constantize : JSONAPI::RequestParser
+      @request = request_parser.new(params, context: context,
                                             key_formatter: key_formatter,
                                             server_error_callbacks: (self.class.server_error_callbacks || []))
 
@@ -114,7 +116,8 @@ module JSONAPI
     end
 
     def resource_serializer_klass
-      @resource_serializer_klass ||= JSONAPI::ResourceSerializer
+      @resource_serializer_klass ||= resource_klass._serializer ?
+                                      resource_klass._serializer.safe_constantize : JSONAPI::ResourceSerializer
     end
 
     def resource_serializer
@@ -131,16 +134,22 @@ module JSONAPI
     end
 
     def base_url
-      @base_url ||= request.protocol + request.host_with_port
+      @base_url ||= @http_request.protocol + @http_request.host_with_port
     end
 
     def resource_klass_name
-      @resource_klass_name ||= "#{self.class.name.underscore.sub(/_controller$/, '').singularize}_resource".camelize
+      return @resource_klass_name if @resource_klass_name.present?
+      if @_direct_method_call
+        @resource_klass_name = "#{params[:controller].underscore.sub(/_controller$/, '').singularize}_resource".camelize
+      else
+        @resource_klass_name = "#{self.class.name.underscore.sub(/_controller$/, '').singularize}_resource".camelize
+      end
     end
 
     def verify_content_type_header
-      unless request.content_type == JSONAPI::MEDIA_TYPE
-        fail JSONAPI::Exceptions::UnsupportedMediaTypeError.new(request.content_type)
+      assign_http_request_object_hack
+      unless @http_request.content_type == JSONAPI::MEDIA_TYPE
+        fail JSONAPI::Exceptions::UnsupportedMediaTypeError.new(@http_request.content_type)
       end
       true
     rescue => e
@@ -150,7 +159,7 @@ module JSONAPI
 
     def verify_accept_header
       unless valid_accept_media_type?
-        fail JSONAPI::Exceptions::NotAcceptableError.new(request.accept)
+        fail JSONAPI::Exceptions::NotAcceptableError.new(@http_request.accept)
       end
       true
     rescue => e
@@ -168,7 +177,7 @@ module JSONAPI
     end
 
     def media_types_for(header)
-      (request.headers[header] || '')
+      (@http_request.headers[header] || '')
         .scan(MEDIA_TYPE_MATCHER)
         .to_a
         .map(&:strip)
@@ -230,7 +239,7 @@ module JSONAPI
         render_options[:json] = content
       else
         # Bypasing ActiveSupport allows us to use CompiledJson objects for cached response fragments
-        render_options[:body] = JSON.generate(content)
+        render_options[:body] = @_direct_method_call ? content : JSON.generate(content)
       end
 
       render_options[:location] = content[:data]["links"][:self] if (
@@ -239,10 +248,13 @@ module JSONAPI
 
       # For whatever reason, `render` ignores :status and :content_type when :body is set.
       # But, we can just set those values directly in the Response object instead.
-      response.status = response_doc.status
-      response.headers['Content-Type'] = JSONAPI::MEDIA_TYPE
-
-      render(render_options)
+      if @_direct_method_call
+        operation_results.has_errors? ? render_options[:json] : render_options[:body]
+      else
+        response.status = response_doc.status
+        response.headers['Content-Type'] = JSONAPI::MEDIA_TYPE
+        render(render_options)
+      end
     end
 
     def create_response_document(operation_results)
@@ -254,6 +266,10 @@ module JSONAPI
         base_links: base_response_links,
         request: @request
       )
+    end
+
+    def assign_http_request_object_hack
+      @http_request ||= request
     end
 
     # override this to process other exceptions

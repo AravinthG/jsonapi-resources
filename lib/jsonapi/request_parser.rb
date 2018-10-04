@@ -15,7 +15,7 @@ module JSONAPI
       @warnings = []
       @operations = []
       @fields = {}
-      @filters = {}
+      @filters = []
       @sort_criteria = nil
       @source_klass = nil
       @source_id = nil
@@ -153,7 +153,7 @@ module JSONAPI
       # Extract the fields for each type from the fields parameters
       if fields.is_a?(ActionController::Parameters)
         fields.each do |field, value|
-          resource_fields = value.split(',') unless value.nil? || value.empty?
+          resource_fields = value.is_a?(Array) ? value : value.split(',') if value.present?
           extracted_fields[field] = resource_fields
         end
       else
@@ -251,7 +251,9 @@ module JSONAPI
       filters.each do |key, value|
         filter = unformat_key(key)
         if @resource_klass._allowed_filter?(filter)
-          @filters[filter] = value
+          # Hack : common structure to support additional filter operators
+          @filters.reject! {|filter_hash| filter_hash[:field] == filter}
+          @filters << {field: filter, value: value, operator: :std}
         else
           fail JSONAPI::Exceptions::FilterNotAllowed.new(filter)
         end
@@ -259,9 +261,17 @@ module JSONAPI
     end
 
     def set_default_filters
+      # @hack to support filters for other operators
+      filter_hash = @filters.present? ? @filters.map { |f_h| [f_h[:field], f_h[:value]]}.to_h : {}
       @resource_klass._allowed_filters.each do |filter, opts|
-        next if opts[:default].nil? || !@filters[filter].nil?
-        @filters[filter] = opts[:default]
+        next if opts[:default].nil? || !filter_hash[filter].nil?
+        filter_hash[filter] = opts[:default]
+      end
+
+      return [] if filter_hash.blank?
+
+      filter_hash.each do |filter, value|
+        @filters << {field: filter, value: value, operator: :std}
       end
     end
 

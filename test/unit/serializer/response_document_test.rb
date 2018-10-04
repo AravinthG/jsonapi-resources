@@ -38,8 +38,8 @@ class ResponseDocumentTest < ActionDispatch::IntegrationTest
 
   def test_response_document_multiple_find
     operations = [
-      JSONAPI::Operation.new(:find, PostResource, filters: {id: '1'}),
-      JSONAPI::Operation.new(:find, PostResource, filters: {id: '2'})
+      JSONAPI::Operation.new(:find, PostResource, filters: [{field: 'id', value: '1', operator: :std}]),
+      JSONAPI::Operation.new(:find, PostResource, filters: [{field: 'id', value: '1', operator: :std}])
     ]
 
     op = JSONAPI::OperationDispatcher.new()

@@ -170,7 +170,7 @@ class JSONAPIRequestTest < ActiveSupport::TestCase
   def test_parse_filters_with_valid_filters
     setup_request
     @request.parse_filters({name: 'Whiskers'})
-    assert_equal(@request.filters[:name], 'Whiskers')
+    assert_equal(@request.filters.select {|f_h| f_h[:field] == :name}.first[:value], 'Whiskers')
     assert_equal(@request.errors, [])
   end
 
@@ -185,14 +185,14 @@ class JSONAPIRequestTest < ActiveSupport::TestCase
   def test_parse_filters_with_no_filters
     setup_request
     @request.parse_filters(nil)
-    assert_equal(@request.filters, {})
+    assert_equal(@request.filters, [])
     assert_equal(@request.errors, [])
   end
 
   def test_parse_filters_with_invalid_filters_param
     setup_request
     @request.parse_filters('noeach') # String does not implement #each
-    assert_equal(@request.filters, {})
+    assert_equal(@request.filters, [])
     assert_equal(@request.errors.count, 1)
     assert_equal(@request.errors.first.title, "Invalid filters syntax")
   end
@@ -200,7 +200,7 @@ class JSONAPIRequestTest < ActiveSupport::TestCase
   def test_parse_sort_with_valid_sorts
     setup_request
     @request.parse_sort_criteria("-name")
-    assert_equal(@request.filters, {})
+    assert_equal(@request.filters, [])
     assert_equal(@request.errors, [])
     assert_equal(@request.sort_criteria, [{:field=>"name", :direction=>:desc}])
   end
@@ -208,7 +208,7 @@ class JSONAPIRequestTest < ActiveSupport::TestCase
   def test_parse_sort_with_relationships
     setup_request
     @request.parse_sort_criteria("-mother.name")
-    assert_equal(@request.filters, {})
+    assert_equal(@request.filters, [])
     assert_equal(@request.errors, [])
     assert_equal(@request.sort_criteria, [{:field=>"mother.name", :direction=>:desc}])
   end

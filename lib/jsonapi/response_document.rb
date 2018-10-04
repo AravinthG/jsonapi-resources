@@ -10,7 +10,7 @@ module JSONAPI
 
     def contents
       hash = results_to_hash
-
+      return hash if @custom_response
       meta = top_level_meta
       hash.merge!(meta: meta) unless meta.empty?
 
@@ -23,6 +23,8 @@ module JSONAPI
     def status
       if @operation_results.has_errors?
         @operation_results.all_errors[0].status
+      elsif @custom_response
+        ''
       else
         @operation_results.results[0].code
       end
@@ -114,6 +116,9 @@ module JSONAPI
                                                result.relationship)
           when JSONAPI::OperationResult
             {}
+          else
+            @custom_response = true
+            {data: result}
           end
 
         elsif @operation_results.results.length > 1
@@ -124,12 +129,21 @@ module JSONAPI
               resources.push(result.resource)
             when JSONAPI::ResourcesOperationResult
               resources.concat(result.resources)
+            else
+              resources.push(result)
             end
           end
 
           @serializer.serialize_to_hash(resources)
         end
       end
+    end
+
+    def standard_result? response
+      return false if response.has_errors?
+      res = response.results[0]
+      (res.is_a?(JSONAPI::ResourceOperationResult) || res.is_a?(JSONAPI::ResourcesOperationResult) ||
+       res.is_a?(JSONAPI::LinksObjectOperationResult) || res.is_a?(JSONAPI::OperationResult))
     end
   end
 end
