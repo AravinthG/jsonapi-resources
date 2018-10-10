@@ -10,19 +10,21 @@ module JSONAPI
 
     def contents
       hash = results_to_hash
-
+      return hash.with_indifferent_access unless standard_result?(@operation_results)
       meta = top_level_meta
       hash.merge!(meta: meta) unless meta.empty?
 
       links = top_level_links
       hash.merge!(links: links) unless links.empty?
 
-      hash
+      hash.with_indifferent_access
     end
 
     def status
       if @operation_results.has_errors?
         @operation_results.all_errors[0].status
+      elsif !standard_result?(@operation_results)
+        ''
       else
         @operation_results.results[0].code
       end
@@ -114,6 +116,8 @@ module JSONAPI
                                                result.relationship)
           when JSONAPI::OperationResult
             {}
+          else
+            {data: result}
           end
 
         elsif @operation_results.results.length > 1
@@ -124,12 +128,21 @@ module JSONAPI
               resources.push(result.resource)
             when JSONAPI::ResourcesOperationResult
               resources.concat(result.resources)
+            else
+              resources.push(result)
             end
           end
 
           @serializer.serialize_to_hash(resources)
         end
       end
+    end
+
+    def standard_result? response
+      return false if response.has_errors?
+      res = response.results[0]
+      (res.is_a?(JSONAPI::ResourceOperationResult) || res.is_a?(JSONAPI::ResourcesOperationResult) ||
+       res.is_a?(JSONAPI::LinksObjectOperationResult) || res.is_a?(JSONAPI::OperationResult))
     end
   end
 end
